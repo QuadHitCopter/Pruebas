@@ -1,0 +1,272 @@
+import numpy as np
+import math
+import matplotlib.pyplot as plt
+from matplotlib import ticker
+
+
+def atmosfera(height):
+    global temp_h, pressure_h, rho_h, a_h
+    z = np.array([0, 11, 20, 32, 47, 52, 61, 79, 90])  # vector alturas en km
+    gr = np.array([-6.5, 0, 1, 2.8, 0, -2, -4, 0])  # gradiente temp
+    temp = np.array([288.15, 0, 0, 0, 0, 0, 0, 0, 0])  # presion atmosferica estandar
+    pressure = np.array([101325, 0, 0, 0, 0, 0, 0, 0, 0])  # presion atmosferica estandar
+    g = 9.8066  # aceleracion de gravedad
+    r_gas = 287.0528  # constante de los gases ideales
+
+    for x in range(8):
+        temp[x + 1] = temp[x] + gr[x] * (z[x + 1] - z[x])
+
+        if gr[x] == 0:
+            ab = -g * 1000 * (z[x + 1] - z[x]) / (r_gas * temp[x])
+            pressure[x + 1] = pressure[x] * math.exp(ab)
+
+        else:
+            bb = (temp[x + 1] / temp[x]) ** (-g * 1000 / (r_gas * gr[x]))
+            pressure[x + 1] = pressure[x] * bb
+
+    h_m = height * 0.3048 / 1000
+    if h_m >= 0 and h_m <= 11:
+        temp_h = temp[0] + gr[0] * (h_m - z[0])
+
+        bb = (temp_h / temp[0]) ** (-g * 1000 / (r_gas * gr[0]))
+        pressure_h = pressure[0] * bb
+    elif h_m > 11 and h_m <= 20:
+        temp_h = temp[1] + gr[1] * (h_m - z[1])
+
+        ab = -g * 1000 * (h_m - z[1]) / (r_gas * temp[1])
+        pressure_h = pressure[1] * math.exp(ab)
+    elif h_m > 20 and h_m <= 32:
+        temp_h = temp[2] + gr[2] * (h_m - z[2])
+        bb = (temp_h / temp[2]) ** (-g * 1000 / (r_gas * gr[2]))
+        pressure_h = pressure[2] * bb
+    elif h_m > 32 and h_m <= 47:
+        temp_h = temp[3] + gr[3] * (h_m - z[3])
+        bb = (temp_h / temp[3]) ** (-g * 1000 / (r_gas * gr[3]))
+        pressure_h = pressure[3] * bb
+    elif h_m > 47 and h_m <= 52:
+        temp_h = temp[4] + gr[4] * (h_m - z[4])
+
+        ab = -g * 1000 * (h_m - z[4]) / (r_gas * temp[4])
+        pressure_h = pressure[4] * math.exp(ab)
+    elif h_m > 52 and h_m <= 61:
+        temp_h = temp[5] + gr[5] * (h_m - z[5])
+        bb = (temp_h / temp[5]) ** (-g * 1000 / (r_gas * gr[5]))
+        pressure_h = pressure[5] * bb
+    elif h_m > 61 and h_m <= 79:
+        temp_h = temp[6] + gr[6] * (h_m - z[6])
+        bb = (temp_h / temp[6]) ** (-g * 1000 / (r_gas * gr[6]))
+        pressure_h = pressure[6] * bb
+    else:
+        print("Altura no valida, llame a la función de nuevo...")
+    if h_m <= 79:
+        rho_h = pressure_h / (r_gas * temp_h)
+        a_h = math.sqrt(1.4 * r_gas * temp_h)
+        # print("Para la altura de "+str(height) + " ft las caracteristicas de la atmosfera son: ")
+        # print("\nLa temperatura es: " + str(temp_h) +" K")
+        # print("\nLa presión es: " + str(pressure_h) +" Pa")
+        # print("\nLa densidad es: " + str(rho_h) + " kg/m3")
+        # print("\nLa velocidad del sonido es: " + str(a_h) + " m/s")
+    return a_h, rho_h, temp_h, pressure_h
+
+
+def roskam_corr(wto):
+    a = 0.0833
+    b = 1.0382
+    we_corr = 10 ** ((math.log(wto, 10) - a) / b)
+    # print("El peso en vacío del avión es :" + str(
+    #     round(we_corr, 2)) + " lb según la correlación de Roskam\n para un Transport Jet")
+    return we_corr
+
+
+def itera_peso(mach_cruise, cruise_height, w_to_guess, w_pl, w_crew, spec_consum_cl, spec_consum_cr, spec_consum_loiter,
+               l_d_cl, l_d_loiter, l_d_cr, roc, rod, path_distance, e_loiter):
+    mff1 = 0.99  # start
+    mff2 = 0.99  # Taxi
+    mff3 = 0.995  # Take off
+    mff7 = 0.99  # Descend
+    mff8 = 0.992  # Landing
+
+
+    a_h, rho_h, temp_h, pressure_h = atmosfera(cruise_height)
+
+
+    ###Calculo de condiciones de vuelo en etapas
+
+    ##CLIMBING
+    e_cl = cruise_height / (60 * roc)
+    mff4 = 1 / (math.exp((e_cl * spec_consum_cl) / l_d_cl))
+
+    # Velocidad de AVANCE al ascender similar al 85% de la velocidad crucero
+    vtas_cr = mach_cruise * a_h * 1.94384  ## ya está en nudos
+    vtas_cl = vtas_cr * 0.85
+
+    # Distancia recorrida en el ascenso
+
+    distance_cl = vtas_cl * e_cl  ## millas nauticas recorridas
+
+    ##VUELO CRUCERO
+    cruise_distance = path_distance - distance_cl
+    e_cr = cruise_distance / vtas_cr  ## está en horas
+    mff5 = 1 / (math.exp((e_cr * spec_consum_cr) / l_d_cr))
+
+    ##LOITER
+    mff6 = 1 / (math.exp((e_loiter * spec_consum_loiter) / l_d_loiter))
+
+    ##FRACCION DE COMBUSTIBLE TOTAL
+    mff_total = mff1 * mff2 * mff3 * mff4 * mff5 * mff6 * mff7 * mff8
+    w_f_used = (1 - mff_total) * w_to_guess
+    w_f_total = w_f_used / 0.9 #considera una reserva del 10% de estanque de combustible
+    w_f_res = w_f_total * 0.1 #calcula reserva
+    w_tfo = 0.0005 * w_f_total #Peso de aceite y combustible atrapado
+    w_e_tent = w_to_guess - w_f_total - w_pl - w_crew - w_tfo #peso en vacio tentativo
+
+    return w_e_tent, w_f_total, mff4, mff5, mff6, mff_total
+
+
+
+
+def iteraciones_final():
+    # print("Ingrese los datos que se le solicitaran")
+    # mach_cruise = float(input("Ingrese la velocidad crucero del avión en Mach: "))
+    # cruise_height = float(input("Ingrese la altura de vuelo cruzero en pies: "))
+    # w_to_guess = float(input("Peso referencia de despegue en [lb]: "))
+    # w_pl = float(input("Peso del payload en [lb]: "))
+    # w_crew = float(input("Peso de la tripulación en [lb]: "))
+    # spec_consum_cl = float(input("Consumo especifico de combustible para ascenso en lbs/lbs/hr: "))
+    # spec_consum_cr = float(input("Consumo especifico de combustible para crucero en lbs/lbs/hr: "))
+    # spec_consum_loiter = float(input("Consumo especifico de combustible para Loiter en lbs/lbs/hr: "))
+    # l_d_cl = float(input("Eficiencia aerodinámica en ascenso: "))
+    # l_d_cr = float(input("Eficiencia aerodinámica en vuelo crucero: "))
+    # l_d_loiter = float(input("Eficiencia aerodinámica en loiter: "))
+    # roc = float(input("Rate of Climb en feat/min: "))
+    # rod = float(input("Rate of descend en feat/min: "))
+    # path_distance = float(input("Distancia recorrida para la misión en millas nauticas: "))
+    # e_loiter = float(input("Tiempo de loiter solicitado: "))  # en horas
+
+
+    mach_cruise = 0.78 # mach
+    cruise_height = 35000 #altura de vuelo crucero [ft]
+    w_to_guess =154329# payload [lb]
+    w_pl = 205*160  #peso por casajero+equipaje por numero de pasajeros  [lb]
+    w_crew = 205*6  #peso por tripulante+equipaje por numero de tripulantes  [lb]
+    spec_consum_cl = 0.4  #consumo especifico ascenso
+    spec_consum_cr = 0.55  #consumo especifico crucero
+    spec_consum_loiter= 0.5 #consumo especifico para loiter
+    l_d_cl = 17.5  #eficiente aerodinamica ascenso
+    l_d_cr = 18  #eficiancia aerodinamica crucero
+    l_d_loiter = 18 #eficiencia aerodinamica para loiter
+    roc = 2000  #rate of climb [ft/min]
+    rod = 2000  #rate of descend [ft/min]
+    path_distance = 3597 # rango de mision [nm]
+    e_loiter = 1 # tiempo de loiter [hr]
+    n = 0
+    tolerancia = 1
+    pesovacio= []
+    pesoto = []
+    while n <= 90 and tolerancia >= 0.01:
+
+        w_e_tent, w_f_total, mff4, mff5, mff6, mff_total = itera_peso(mach_cruise, cruise_height, w_to_guess, w_pl, w_crew, spec_consum_cl, spec_consum_cr,
+                                spec_consum_loiter, l_d_cl, l_d_loiter, l_d_cr, roc, rod, path_distance, e_loiter)
+
+        w_e_tent_roskam = roskam_corr(w_to_guess)
+
+        tolerancia =abs((w_e_tent_roskam - w_e_tent) / w_e_tent_roskam)
+
+
+        pesovacio.append(w_e_tent)
+        pesoto.append(w_to_guess)
+
+
+
+
+
+        if w_e_tent > w_e_tent_roskam:
+            w_to_guess = w_to_guess - 1* abs(w_e_tent_roskam - w_e_tent)
+        elif w_e_tent < w_e_tent_roskam:
+            w_to_guess = w_to_guess + 1* abs(w_e_tent_roskam - w_e_tent)
+        else:
+            return w_to_guess, tolerancia , w_e_tent, w_f_total, n, mff4, mff5, mff6, mff_total, pesoto, pesovacio
+
+        n = n + 1
+    return w_to_guess, tolerancia, w_e_tent, w_f_total, n, mff4, mff5, mff6, mff_total, pesoto, pesovacio
+
+w_to_final, tol, w_e_tent, w_f_total, n, mff4, mff5, mff6, mff_total, pesoto, pesovacio = iteraciones_final()
+
+
+print("El peso de despegue estimado para la misión corresponde a : {0:.2f} [lb],".format(w_to_final) + " teniendo un"
+ " peso en vacío de: {0:.2f} [lb]".format(w_e_tent) + " con un error respecto a Roskam del : {0:.4} %".format(tol*100))
+print("Además, se estima un peso de combustible de : {0:02f} [lb]".format(w_f_total))
+print('El total de iteraciones fue de : {0:02f} '.format(n))
+print('La fracción de combustible para el ascenso es de {0:02f}'.format(mff4))
+print('La fracción de combustible para el vuelo crucero es de {0:02f}'.format(mff5))
+print('La fracción de combustible para el loiter es de {0:02f}'.format(mff6))
+print('La fracción de combustible para la misión completa es de {0:02f}'.format(mff_total))
+
+
+#########GENERACIÓN DE GRAFICAS
+
+def ploting():
+# figure settings
+    figure_width = 28.7 # cm
+    figure_height = 20 # cm
+    left_right_magrin = 2.8 # cm
+    top_bottom_margin = 3 # cm
+
+    # Don't change
+    left   = left_right_magrin / figure_width + 0.02 # Percentage from height
+    bottom = top_bottom_margin / figure_height # Percentage from height
+    width  = 1 - left*2 +0.08
+    height = 1 - bottom*2
+    cm2inch = 1/2.54 # inch per cm
+
+    # specifying the width and the height of the box in inches
+    fig = plt.figure(figsize=(figure_width*cm2inch,figure_height*cm2inch), facecolor='#EBEBEB')
+    ax = fig.add_axes((left, bottom, width, height))
+    roskam = []
+    w_toroskam = np.linspace(10000, 1000000, 1000)
+    for j in range(len(w_toroskam)):
+        roskam.append(roskam_corr(w_toroskam[j]))
+
+    pesovaciodot = [pesovacio[0], pesovacio[-1]]
+    pesotodot = [pesoto[0], pesoto[-1]]
+
+    plt.vlines(pesotodot, 0, pesovaciodot, linestyle="dashed", color='k')
+    plt.hlines(pesovaciodot, 0, pesotodot, linestyle="dashed", color='k')
+    grap1 = ax.plot(w_toroskam, roskam, label="Correlación Roskam",linewidth=3.5, linestyle='-')
+    grap2 = ax.plot(pesoto, pesovacio, marker="*", ls="", label='Iteraciones', markersize='12' ,color='#B90000')
+    grpa3 = ax.plot(pesoto[0], pesovacio[0], ls='', marker='o', markersize=20, label='Iteración #1 con $\mathregular{W_{TO.guess}}$')
+    grpa4 = ax.plot(pesoto[-1], pesovacio[-1], ls='', marker='D', markersize=10, label='Iteración Final con error <1% ')
+    plt.xscale('log')
+    plt.yscale('log')
+
+    ax.set_xlim(np.array([150000, 200000]))
+    ax.set_ylim(np.array([70000, 110000]))
+    ax.legend(loc='lower center', bbox_to_anchor=(0.45, -0.21),
+              ncol=4, fancybox=True, shadow=True, fontsize=11)
+    ax.grid(which='both')
+    plt.xlabel('GROSS TAKE-OFF WEIGHT ~ $\mathregular{W_{TO}}$  [lb] ',fontsize=18)
+    plt.ylabel('EMPTY WEIGHT ~ $\mathregular{W_E}$  [lb]', fontsize=18)
+    plt.rcParams['axes.titley'] = 1.05
+
+    plt.title('Correlación de Roskam e Iteraciones', fontsize=30)
+
+    xalocs = [round(pesoto[0], -3),round(pesoto[-1], -3)]
+    yalocs = [round(pesovacio[0], -3),round(pesovacio[-1], -3)]
+    print(yalocs)
+
+    plt.xticks(xalocs, color='red', fontname='Arial', fontsize=11.5)
+    plt.yticks(yalocs, color='red', fontname='Arial', fontsize=11.5)
+
+    # xlabels = ['{:.2e}'.format(round(pesoto[-1], -3)), '{:.2e}'.format(round(pesoto[0], -3))]
+    # ylabels = ['{:.2e}'.format(round(pesovacio[-1], -3)), '{:.1e}'.format(round(pesovacio[0], -3))]
+    #
+    # ax.xaxis.set_major_locator(ticker.FixedLocator(x_locs))
+    # ax.xaxis.set_major_formatter(ticker.FixedFormatter(xlabels))
+    # ax.yaxis.set_major_locator(ticker.FixedLocator(y_locs))
+    # ax.yaxis.set_major_formatter(ticker.FixedFormatter(ylabels))
+    # ax.tick_params(axis='x', colors='#0F16C7', labelsize=12)    #setting up X-axis tick color to red
+    # ax.tick_params(axis='y', colors='#0F16C7', labelsize=12)  #setting up Y-axis tick color to black
+    ax.set_facecolor('#CED6EB')
+    plt.show()
+    # fig.savefig('GraficoRoskam.svg')
+ploting()
